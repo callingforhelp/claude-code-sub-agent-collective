@@ -35,19 +35,34 @@ get_in_progress_count() {
     jq '.steps | map(select(.status == "in-progress")) | length' workflow.json 2>/dev/null || echo "0"
 }
 
-# Function: Update task status  
+# Function: Update task status
 update_task_status() {
     local task_id="$1"
-    local new_status="$2" 
+    local new_status="$2"
     local result="$3"
-    
+
     if [[ ! -f workflow.json ]]; then return; fi
-    
+
     TEMP_FILE=$(mktemp)
     jq --arg id "$task_id" --arg status "$new_status" --arg result "$result" \
        '.steps |= map(if .id == ($id | tonumber) then .status = $status | .result = $result else . end)' \
        workflow.json > "$TEMP_FILE" && mv "$TEMP_FILE" workflow.json
-    
+
+    echo "  UPDATED: Task $task_id -> $new_status" >> /tmp/workflow-log.log
+}
+
+# Function: Set task status without modifying result
+set_task_status() {
+    local task_id="$1"
+    local new_status="$2"
+
+    if [[ ! -f workflow.json ]]; then return; fi
+
+    TEMP_FILE=$(mktemp)
+    jq --arg id "$task_id" --arg status "$new_status" \
+       '.steps |= map(if .id == ($id | tonumber) then .status = $status else . end)' \
+       workflow.json > "$TEMP_FILE" && mv "$TEMP_FILE" workflow.json
+
     echo "  UPDATED: Task $task_id -> $new_status" >> /tmp/workflow-log.log
 }
 
@@ -64,6 +79,15 @@ update_execution_queue() {
     local recommendations=""
     if [[ $can_start -gt 0 && -n "$available_tasks" ]]; then
         recommendations=$(echo "$available_tasks" | head -n "$can_start" | tr '\n' ',' | sed 's/,$//')
+
+        # Mark recommended tasks as in-progress to respect MAX_PARALLEL
+        for task_id in $(echo "$recommendations" | tr ',' ' '); do
+            set_task_status "$task_id" "in-progress"
+        done
+
+        # Recalculate in-progress count after updates
+        in_progress_count=$(get_in_progress_count)
+        can_start=$((MAX_PARALLEL - in_progress_count))
     fi
     
     echo "  QUEUE STATE: available=[$available_tasks], in_progress=$in_progress_count, can_start=$can_start" >> /tmp/workflow-log.log
