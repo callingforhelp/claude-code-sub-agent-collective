@@ -196,7 +196,7 @@ elif [[ -f "workflow.json" ]]; then
     echo "  ACTION: Processing task completion" >> /tmp/workflow-log.log
     
     # Find and update the completed task
-    CURRENT_TASK=$(jq -r --arg agent "$SUBAGENT_TYPE" '.steps[] | select(.agent == $agent and .status == "pending") | .id' workflow.json | head -1)
+    CURRENT_TASK=$(jq -r --arg agent "$SUBAGENT_TYPE" '.steps[] | select(.agent == $agent and .status == "in-progress") | .id' workflow.json | head -1)
     
     if [[ -n "$CURRENT_TASK" ]]; then
         # Update task as completed
@@ -206,7 +206,7 @@ elif [[ -f "workflow.json" ]]; then
         update_execution_queue
         
         # Check if workflow is complete
-        PENDING_COUNT=$(jq '.steps | map(select(.status == "pending")) | length' workflow.json)
+        PENDING_COUNT=$(jq ' .steps | map(select(.status != "completed")) | length' workflow.json)
         if [[ $PENDING_COUNT -eq 0 ]]; then
             TEMP_FILE=$(mktemp)
             jq '.status = "completed"' workflow.json > "$TEMP_FILE" && mv "$TEMP_FILE" workflow.json
